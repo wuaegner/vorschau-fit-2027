@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Vorschau</title>
+<style>
+  :root { --bg: #FFC21A; --ink: #14261F; --green: #0E3F31; --card: #FFFDF6; --err: #8E0B30; }
+  * { box-sizing: border-box; }
+  body { min-height: 100svh; margin: 0; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--ink); font: 400 17px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { width: min(100%, 420px); padding: 28px 24px; border-radius: 28px; background: var(--card); }
+  h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.15; }
+  p { margin: 0 0 20px; }
+  label { display: block; margin-bottom: 4px; font-weight: 700; }
+  input { width: 100%; min-height: 56px; padding: 12px 16px; border: 2px solid var(--green); border-radius: 16px; background: #fff; color: var(--ink); font: inherit; }
+  button, a.go { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 56px; margin-top: 12px; padding: 12px 20px; border: 0; border-radius: 999px; background: var(--green); color: #fff; font: 700 17px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif; text-decoration: none; cursor: pointer; }
+  button:disabled { opacity: .7; cursor: wait; }
+  input:focus-visible, button:focus-visible, a.go:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  #err { min-height: 24px; margin: 8px 0 0; color: var(--err); font-weight: 700; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <form id="login">
+    <h1>Private Vorschau</h1>
+    <p>Gib das Passwort ein, das du bekommen hast.</p>
+    <label for="pw">Passwort</label>
+    <input id="pw" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+    <button id="open" type="submit">Vorschau öffnen</button>
+    <p id="err" role="alert"></p>
+  </form>
+  <nav id="pages" hidden>
+    <h1>Welche Seite?</h1>
+    <p>Beide Seiten sind Entwürfe.</p>
+    <a class="go" href="app/challenge.html">Challenge-Seite</a>
+    <a class="go" href="app/index.html">Angebotsseite</a>
+  </nav>
+</main>
+<script>
+(() => {
+  const DB = 'vorschau', STORE = 'vault';
+  const db = () => new Promise((ok, no) => {
+    const r = indexedDB.open(DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(STORE);
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => no(r.error);
+  });
+  const put = async (key, manifest) => {
+    const d = await db();
+    await new Promise((ok, no) => {
+      const t = d.transaction(STORE, 'readwrite');
+      t.objectStore(STORE).put({ key, manifest }, 'v');
+      t.oncomplete = ok;
+      t.onerror = () => no(t.error);
+    });
+  };
+  const has = async () => {
+    const d = await db();
+    return new Promise(ok => {
+      const r = d.transaction(STORE).objectStore(STORE).get('v');
+      r.onsuccess = () => ok(!!r.result);
+      r.onerror = () => ok(false);
+    });
+  };
+  const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const form = document.getElementById('login');
+  const pages = document.getElementById('pages');
+  const err = document.getElementById('err');
+  const btn = document.getElementById('open');
+
+  async function ready() {
+    await navigator.serviceWorker.register('sw.js');
+    await navigator.serviceWorker.ready;
+    form.hidden = true;
+    pages.hidden = false;
+  }
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    err.textContent = '';
+    btn.disabled = true;
+    btn.textContent = 'Wird geöffnet';
+    try {
+      const cfg = await (await fetch('config.json', { cache: 'no-store' })).json();
+      const pw = document.getElementById('pw').value.trim();
+      const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+      const key = await crypto.subtle.deriveKey(
+        { name: 'PBKDF2', hash: 'SHA-256', salt: b64(cfg.salt), iterations: cfg.iter },
+        base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+      const raw = new Uint8Array(await (await fetch('d/manifest.bin', { cache: 'no-store' })).arrayBuffer());
+      let plain;
+      try {
+        plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.slice(0, 12) }, key, raw.slice(12));
+      } catch {
+        err.textContent = 'Das Passwort stimmt nicht. Prüf es und versuch es noch einmal.';
+        return;
+      }
+      await put(key, JSON.parse(new TextDecoder().decode(plain)));
+      await ready();
+    } catch {
+      err.textContent = 'Die Vorschau lässt sich hier nicht öffnen. Versuch es in Safari oder Chrome, nicht im privaten Modus.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Vorschau öffnen';
+    }
+  });
+
+  has().then(found => { if (found) ready(); }).catch(() => {});
+})();
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 /* Entschlüsselt die Vorschau im Browser. Der Schlüssel bleibt auf dem Gerät. */
-const DB = 'vorschau', STORE = 'vault';
+const DB = 'vorschau2', STORE = 'vault';
 const scope = () => new URL(self.registration.scope);
 const cache = new Map();
 let vault = null;

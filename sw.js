@@ -31,8 +31,22 @@ async function plain(entry, key) {
   return data;
 }
 
+/* Holt nach einer Aktualisierung die neue Dateiliste, ohne erneutes Passwort. */
+async function freshVault() {
+  const v = await loadVault();
+  if (!v) return null;
+  try {
+    const res = await fetch(new URL('d/manifest.bin', scope()), { cache: 'no-store' });
+    const raw = new Uint8Array(await res.arrayBuffer());
+    const data = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.slice(0, 12) }, v.key, raw.slice(12));
+    v.manifest = JSON.parse(new TextDecoder().decode(data));
+  } catch { /* gespeicherte Liste weiter nutzen */ }
+  return v;
+}
+
 async function serve(request, rel) {
-  vault = vault || await loadVault();
+  if (request.mode === 'navigate') vault = null;
+  vault = vault || await freshVault();
   if (!vault) return Response.redirect(scope().href, 302);
   const entry = vault.manifest[rel];
   if (!entry) return new Response('Nicht gefunden', { status: 404 });

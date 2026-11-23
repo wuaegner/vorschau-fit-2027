@@ -1,5 +1,5 @@
 /* Entschlüsselt die Vorschau im Browser. Der Schlüssel bleibt auf dem Gerät. */
-const DB = 'vorschau2', STORE = 'vault';
+const DB = 'vorschau3', STORE = 'vault';
 const scope = () => new URL(self.registration.scope);
 const cache = new Map();
 let vault = null;
@@ -34,7 +34,8 @@ async function plain(entry, key) {
 /* Holt nach einer Aktualisierung die neue Dateiliste, ohne erneutes Passwort. */
 async function freshVault() {
   const v = await loadVault();
-  if (!v) return null;
+  if (!v || !(v.key instanceof Uint8Array || v.key instanceof ArrayBuffer)) return null;
+  v.key = await crypto.subtle.importKey('raw', v.key, 'AES-GCM', false, ['decrypt']);
   try {
     const res = await fetch(new URL('d/manifest.bin', scope()), { cache: 'no-store' });
     const raw = new Uint8Array(await res.arrayBuffer());
